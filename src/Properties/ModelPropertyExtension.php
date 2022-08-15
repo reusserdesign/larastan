@@ -289,7 +289,7 @@ final class ModelPropertyExtension implements PropertiesClassReflectionExtension
             }
 
             if ($this->tables[$modelInstance->getTable()]->columns[$name]->nullable) {
-                $realType = $realType instanceof Type ? TypeCombinator::addNull($realType) : $realType . '|null';
+                $realType = $realType instanceof Type ? TypeCombinator::addNull($realType) : $realType.'|null';
             }
 
             $this->tables[$modelInstance->getTable()]->columns[$name]->readableType = $realType;
