@@ -9,3 +9,6 @@ use function PHPStan\Testing\assertType;
 assertType('int', $user->newStyleAttribute);
 assertType('int', $user->stringButInt);
 assertType('string', $user->email);
+
+// CastsAttributes
+assertType('App\DTO\Favorites', $user->favorites);
