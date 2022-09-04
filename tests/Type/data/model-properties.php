@@ -11,4 +11,4 @@ assertType('int', $user->stringButInt);
 assertType('string', $user->email);
 
 // CastsAttributes
-assertType('App\DTO\Favorites', $user->favorites);
+assertType('App\ValueObjects\Favorites', $user->favorites);
