@@ -9,6 +9,7 @@ use App\PostBuilder;
 use App\User;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use function PHPStan\Testing\assertType;
 
@@ -198,10 +199,10 @@ class Builder
     public function testJoinSubAllowsEloquentBuilder(): void
     {
         User::query()->joinSub(
-            User::query()->whereIn('id', [1, 2, 3]),
+            Post::query()->whereIn('id', [1, 2, 3]),
             'users',
             'users.id',
-            'users.id'
+            'posts.id'
         );
     }
 
@@ -334,5 +335,31 @@ class Builder
         Post::query()->firstWhere(function (PostBuilder $query) {
             assertType('App\PostBuilder<App\Post>', $query);
         });
+    }
+
+    /**
+     * @template TModelClass of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  EloquentBuilder<TModelClass>  $query
+     */
+    public function testQueryBuilderOnEloquentBuilderWithBaseModel(EloquentBuilder $query): void
+    {
+        assertType('Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>', $query->select());
+    }
+
+    /**
+     * @phpstan-return LengthAwarePaginator<User>
+     */
+    public function testPaginate()
+    {
+        return User::query()->paginate();
+    }
+
+    /**
+     * @phpstan-return array<User>
+     */
+    public function testPaginateItems()
+    {
+        return User::query()->paginate()->items();
     }
 }

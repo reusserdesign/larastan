@@ -3,14 +3,21 @@
 namespace NunoMaduro\Larastan\Methods;
 
 use Carbon\Traits\Macro as CarbonMacro;
+use Illuminate\Auth\RequestGuard;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Str;
 use Illuminate\Support\Traits\Macroable;
 use NunoMaduro\Larastan\Concerns\HasContainer;
 use PHPStan\Reflection\ClassReflection;
 use PHPStan\Reflection\MethodReflection;
+use PHPStan\Reflection\MissingMethodFromReflectionException;
 use PHPStan\Reflection\ReflectionProvider;
+use PHPStan\ShouldNotHappenException;
 use PHPStan\Type\ClosureTypeFactory;
+use ReflectionException;
 
 class MacroMethodsClassReflectionExtension implements \PHPStan\Reflection\MethodsClassReflectionExtension
 {
@@ -23,10 +30,15 @@ class MacroMethodsClassReflectionExtension implements \PHPStan\Reflection\Method
     {
     }
 
+    /**
+     * @throws ReflectionException
+     * @throws ShouldNotHappenException
+     * @throws MissingMethodFromReflectionException
+     */
     public function hasMethod(ClassReflection $classReflection, string $methodName): bool
     {
-        /** @var class-string $className */
-        $className = null;
+        /** @var class-string[] $classNames */
+        $classNames = [];
         $found = false;
         $macroTraitProperty = null;
 
@@ -38,34 +50,72 @@ class MacroMethodsClassReflectionExtension implements \PHPStan\Reflection\Method
                 $className = get_class($concrete);
 
                 if ($className && $this->reflectionProvider->getClass($className)->hasTraitUse(Macroable::class)) {
+                    $classNames = [$className];
                     $macroTraitProperty = 'macros';
                 }
             }
-        } elseif ($classReflection->hasTraitUse(Macroable::class) || $classReflection->getName() === Builder::class) {
-            $className = $classReflection->getName();
+        } elseif ($this->hasIndirectTraitUse($classReflection, Macroable::class) || $classReflection->getName() === Builder::class || $classReflection->isSubclassOf(Builder::class)) {
+            $classNames = [$classReflection->getName()];
             $macroTraitProperty = 'macros';
+
+            if ($classReflection->isSubclassOf(Builder::class)) {
+                $classNames[] = Builder::class;
+            }
         } elseif ($this->hasIndirectTraitUse($classReflection, CarbonMacro::class)) {
-            $className = $classReflection->getName();
+            $classNames = [$classReflection->getName()];
             $macroTraitProperty = 'globalMacros';
+        } elseif ($classReflection->isSubclassOf(Facade::class)) {
+            $facadeClass = $classReflection->getName();
+
+            if ($facadeClass === Auth::class) {
+                $classNames = [SessionGuard::class, RequestGuard::class];
+                $macroTraitProperty = 'macros';
+            } else {
+                $concrete = $facadeClass::getFacadeRoot();
+
+                if ($concrete) {
+                    $facadeClassName = get_class($concrete);
+
+                    if ($facadeClassName) {
+                        $classNames = [$facadeClassName];
+                        $macroTraitProperty = 'macros';
+                    }
+                }
+            }
         }
 
-        if ($className !== null && $macroTraitProperty) {
-            $macroClassReflection = $this->reflectionProvider->getClass($className);
+        if ($classNames !== [] && $macroTraitProperty) {
+            foreach ($classNames as $className) {
+                $macroClassReflection = $this->reflectionProvider->getClass($className);
 
-            if ($macroClassReflection->getNativeReflection()->hasProperty($macroTraitProperty)) {
-                $refProperty = $macroClassReflection->getNativeReflection()->getProperty($macroTraitProperty);
-                $refProperty->setAccessible(true);
+                if ($macroClassReflection->getNativeReflection()->hasProperty($macroTraitProperty)) {
+                    $refProperty = $macroClassReflection->getNativeReflection()->getProperty($macroTraitProperty);
+                    $refProperty->setAccessible(true);
 
-                $found = array_key_exists($methodName, $refProperty->getValue());
+                    $found = array_key_exists($methodName, $refProperty->getValue());
 
-                if ($found) {
-                    $methodReflection = new Macro(
-                        $macroClassReflection, $methodName, $this->closureTypeFactory->fromClosureObject($refProperty->getValue()[$methodName])
-                    );
+                    if ($found) {
+                        $macroDefinition = $refProperty->getValue()[$methodName];
 
-                    $methodReflection->setIsStatic(true);
+                        if (is_array($macroDefinition)) {
+                            $macroClassName = get_class($macroDefinition[0]);
+                            if ($macroClassName === false || ! $this->reflectionProvider->hasClass($macroClassName) || ! $this->reflectionProvider->getClass($macroClassName)->hasNativeMethod($macroDefinition[1])) {
+                                throw new ShouldNotHappenException('Class '.$macroClassName.' does not exist');
+                            }
 
-                    $this->methods[$classReflection->getName().'-'.$methodName] = $methodReflection;
+                            $methodReflection = $this->reflectionProvider->getClass($macroClassName)->getNativeMethod($macroDefinition[1]);
+                        } else {
+                            $methodReflection = new Macro(
+                                $macroClassReflection, $methodName, $this->closureTypeFactory->fromClosureObject($refProperty->getValue()[$methodName])
+                            );
+
+                            $methodReflection->setIsStatic(true);
+                        }
+
+                        $this->methods[$classReflection->getName().'-'.$methodName] = $methodReflection;
+
+                        break;
+                    }
                 }
             }
         }

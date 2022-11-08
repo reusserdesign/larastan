@@ -187,4 +187,152 @@ final class ModelPropertyExtension implements PropertiesClassReflectionExtension
 
         return in_array($propertyName, $dates);
     }
+
+    /**
+     * @param  SchemaColumn  $column
+     * @param  Model  $modelInstance
+     * @return string[]
+     * @phpstan-return array<int, string>
+     */
+    private function getReadableAndWritableTypes(SchemaColumn $column, Model $modelInstance): array
+    {
+        $readableType = $column->readableType;
+        $writableType = $column->writeableType;
+
+        if (in_array($column->name, $this->getModelDateColumns($modelInstance), true)) {
+            return [$this->getDateClass().($column->nullable ? '|null' : ''), $this->getDateClass().'|string'.($column->nullable ? '|null' : '')];
+        }
+
+        switch ($column->readableType) {
+            case 'string':
+            case 'int':
+            case 'float':
+                $readableType = $writableType = $column->readableType.($column->nullable ? '|null' : '');
+                break;
+
+            case 'boolean':
+            case 'bool':
+                switch ((string) config('database.default')) {
+                    case 'sqlite':
+                    case 'mysql':
+                        $writableType = '0|1|bool';
+                        $readableType = 'bool';
+                        break;
+                    default:
+                        $readableType = $writableType = 'bool';
+                        break;
+                }
+                break;
+            case 'enum':
+            case 'set':
+                if (! $column->options) {
+                    $readableType = $writableType = 'string';
+                } else {
+                    $readableType = $writableType = '\''.implode('\'|\'', $column->options).'\'';
+                }
+
+                break;
+
+            default:
+                break;
+        }
+
+        return [$readableType, $writableType];
+    }
+
+    private function castPropertiesType(Model $modelInstance): void
+    {
+        $casts = $modelInstance->getCasts();
+        foreach ($casts as $name => $type) {
+            if (! array_key_exists($name, $this->tables[$modelInstance->getTable()]->columns)) {
+                continue;
+            }
+
+            // Reduce encrypted castable types
+            if (in_array($type, ['encrypted', 'encrypted:array', 'encrypted:collection', 'encrypted:json', 'encrypted:object'], true)) {
+                $type = Str::after($type, 'encrypted:');
+            }
+
+            // Truncate cast parameters
+            $type = Str::before($type, ':');
+
+            switch ($type) {
+                case 'boolean':
+                case 'bool':
+                    $realType = 'boolean';
+                    break;
+                case 'string':
+                case 'decimal':
+                    $realType = 'string';
+                    break;
+                case 'array':
+                case 'json':
+                    $realType = 'array';
+                    break;
+                case 'object':
+                    $realType = 'object';
+                    break;
+                case 'int':
+                case 'integer':
+                case 'timestamp':
+                    $realType = 'integer';
+                    break;
+                case 'real':
+                case 'double':
+                case 'float':
+                    $realType = 'float';
+                    break;
+                case 'date':
+                case 'datetime':
+                    $realType = $this->getDateClass();
+                    break;
+                case 'collection':
+                    $realType = '\Illuminate\Support\Collection';
+                    break;
+                case 'Illuminate\Database\Eloquent\Casts\AsArrayObject':
+                    $realType = ArrayObject::class;
+                    break;
+                case 'Illuminate\Database\Eloquent\Casts\AsCollection':
+                    $realType = '\Illuminate\Support\Collection<array-key, mixed>';
+                    break;
+                default:
+                    $realType = class_exists($type) ? ('\\'.$type) : 'mixed';
+                    break;
+            }
+
+            if ($this->tables[$modelInstance->getTable()]->columns[$name]->nullable) {
+                $realType .= '|null';
+            }
+
+            $this->tables[$modelInstance->getTable()]->columns[$name]->readableType = $realType;
+            $this->tables[$modelInstance->getTable()]->columns[$name]->writeableType = $realType;
+        }
+    }
+
+    private function hasAttribute(ClassReflection $classReflection, string $propertyName): bool
+    {
+        if ($classReflection->hasNativeMethod('get'.Str::studly($propertyName).'Attribute')) {
+            return true;
+        }
+
+        $camelCase = Str::camel($propertyName);
+
+        if ($classReflection->hasNativeMethod($camelCase)) {
+            $methodReflection = $classReflection->getNativeMethod($camelCase);
+
+            if ($methodReflection->isPublic() || $methodReflection->isPrivate()) {
+                return false;
+            }
+
+            $returnType = ParametersAcceptorSelector::selectSingle($methodReflection->getVariants())->getReturnType();
+
+            if (! (new ObjectType(Attribute::class))->isSuperTypeOf($returnType)->yes()) {
+                return false;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
 }
