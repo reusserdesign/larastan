@@ -2,6 +2,8 @@
 
 namespace App;
 
+use App\Casts\Favorites;
+use App\Casts\Hash;
 use function get_class;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\AsArrayObject;
@@ -48,6 +50,8 @@ class User extends Authenticatable
         'email_verified_at' => 'date',
         'options' => AsArrayObject::class,
         'properties' => AsCollection::class,
+        'favorites' => Favorites::class,
+        'secret' => Hash::class.':sha256',
     ];
 
     /**
