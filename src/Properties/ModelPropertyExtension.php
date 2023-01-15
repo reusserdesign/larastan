@@ -80,7 +80,7 @@ final class ModelPropertyExtension implements PropertiesClassReflectionExtension
     {
         $propertyNameStudlyCase = Str::studly($propertyName);
 
-        if ($classReflection->hasNativeMethod("get{$propertyNameStudlyCase}Attribute")) {
+        if ($classReflection->hasNativeMethod(sprintf('get%sAttribute', $propertyNameStudlyCase))) {
             return true;
         }
 
@@ -237,7 +237,16 @@ final class ModelPropertyExtension implements PropertiesClassReflectionExtension
                 break;
         }
 
-        return [$readableType, $writableType];
+        if ($column->nullable) {
+            $readableType = TypeCombinator::addNull($readableType);
+            $writableType = TypeCombinator::addNull($writableType);
+        }
+
+        return new ModelProperty(
+            $classReflection,
+            $readableType,
+            $writableType,
+        );
     }
 
     private function castPropertiesType(Model $modelInstance): void

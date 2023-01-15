@@ -51,8 +51,8 @@ assertType('Illuminate\Database\Eloquent\Collection<(int|string), App\User>', $c
 assertType('Illuminate\Support\Collection<int, int>', $collection->keys());
 assertType('Illuminate\Support\Collection<int, string>', $items->keys());
 
-assertType('Illuminate\Support\Collection<int, mixed>', $collection->pluck(['email']));
-assertType('Illuminate\Support\Collection<int, mixed>', $items->pluck('1'));
+assertType('Illuminate\Support\Collection<(int|string), mixed>', $collection->pluck(['email']));
+assertType('Illuminate\Support\Collection<(int|string), mixed>', $items->pluck('1'));
 
 assertType('Illuminate\Support\Collection<int, int>', $customEloquentCollection->map(fn (Transaction $transaction): int => $transaction->id));
 assertType('Illuminate\Support\Collection<int, int>', $secondCustomEloquentCollection->map(fn (User $user): int => $user->id));
@@ -74,10 +74,10 @@ assertType('App\TransactionCollection<int, App\Transaction>', $customEloquentCol
 assertType('App\UserCollection', $secondCustomEloquentCollection->mergeRecursive([1 => new User()]));
 assertType('Illuminate\Support\Collection<string, int>', $items->mergeRecursive(['foo' => 2]));
 
-assertType('Illuminate\Database\Eloquent\Collection<int, int>', $collection->combine([1]));
-assertType('App\TransactionCollection<int, int>', $customEloquentCollection->combine([1]));
+assertType('Illuminate\Database\Eloquent\Collection<(int|string), int>', $collection->combine([1]));
+assertType('App\TransactionCollection<(int|string), int>', $customEloquentCollection->combine([1]));
 assertType('App\UserCollection', $secondCustomEloquentCollection->combine([1]));
-assertType('Illuminate\Support\Collection<string, string>', $items->combine(['foo']));
+assertType('Illuminate\Support\Collection<(int|string), string>', $items->combine(['foo']));
 
 assertType('App\User|Illuminate\Database\Eloquent\Collection<int, App\User>|null', $collection->pop(1));
 assertType('App\Transaction|App\TransactionCollection<int, App\Transaction>|null', $customEloquentCollection->pop(2));
@@ -168,13 +168,20 @@ assertType(
 );
 
 assertType(
-    'Illuminate\Database\Eloquent\Collection<int, mixed>',
+    'Illuminate\Database\Eloquent\Collection<int, int>',
     $collection->flatMap(function (User $user, int $id) {
-        return $user->email;
+        return [$user->id];
     })
 );
 
-assertType('Illuminate\Support\Collection<(int|string), Illuminate\Support\Collection<(int|string), non-empty-array<string, int|string>>>', collect([
+assertType(
+    'Illuminate\Support\Collection<int, int>',
+    $items->flatMap(function (int $int) {
+        return [$int * 2];
+    })
+);
+
+assertType('Illuminate\Support\Collection<(int|string), Illuminate\Support\Collection<(int|string), array{id: int, type: string}>>', collect([
     [
         'id'   => 1,
         'type' => 'A',

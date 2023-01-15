@@ -14,8 +14,10 @@ use PHPStan\Type\DynamicMethodReturnTypeExtension;
 use PHPStan\Type\Generic\GenericObjectType;
 use PHPStan\Type\IntersectionType;
 use PHPStan\Type\ObjectType;
+use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeTraverser;
+use PHPStan\Type\TypeWithClassName;
 use PHPStan\Type\UnionType;
 
 class CollectionGenericStaticMethodDynamicMethodReturnTypeExtension implements DynamicMethodReturnTypeExtension
@@ -61,18 +63,13 @@ class CollectionGenericStaticMethodDynamicMethodReturnTypeExtension implements D
 
         $calledOnType = $scope->getType($methodCall->var);
 
-        if (! $calledOnType instanceof ObjectType) {
+        if (! $calledOnType instanceof TypeWithClassName) {
             return $returnType;
         }
 
         $classReflection = $calledOnType->getClassReflection();
 
         if ($classReflection === null) {
-            return $returnType;
-        }
-
-        // If it's called on Support collection, just return.
-        if ($classReflection->getName() === Collection::class) {
             return $returnType;
         }
 
@@ -109,6 +106,11 @@ class CollectionGenericStaticMethodDynamicMethodReturnTypeExtension implements D
 
         $genericTypes = $returnTypeClassReflection->typeMapToList($returnTypeClassReflection->getActiveTemplateTypeMap());
 
+        // If the key type is gonna be a model, we change it to string
+        if ((new ObjectType(Model::class))->isSuperTypeOf($genericTypes[0])->yes()) {
+            $genericTypes[0] = new StringType();
+        }
+
         $genericTypes = array_map(static function (Type $type) use ($classReflection) {
             return TypeTraverser::map($type, static function (Type $type, callable $traverse) use ($classReflection): Type {
                 if ($type instanceof UnionType || $type instanceof IntersectionType) {
@@ -116,7 +118,9 @@ class CollectionGenericStaticMethodDynamicMethodReturnTypeExtension implements D
                 }
 
                 if ($type instanceof GenericObjectType && (($innerTypeReflection = $type->getClassReflection()) !== null)) {
-                    return new GenericObjectType($classReflection->getName(), $innerTypeReflection->typeMapToList($innerTypeReflection->getActiveTemplateTypeMap()));
+                    $genericTypes = $innerTypeReflection->typeMapToList($innerTypeReflection->getActiveTemplateTypeMap());
+
+                    return new GenericObjectType($classReflection->getName(), $genericTypes);
                 }
 
                 return $traverse($type);

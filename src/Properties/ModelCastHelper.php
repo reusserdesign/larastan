@@ -6,21 +6,23 @@ use Illuminate\Contracts\Database\Eloquent\Castable;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Contracts\Database\Eloquent\CastsInboundAttributes;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Str;
 use PHPStan\Reflection\ParameterReflection;
 use PHPStan\Reflection\ParametersAcceptorSelector;
 use PHPStan\Reflection\ReflectionProvider;
 use PHPStan\Type\Accessory\AccessoryNumericStringType;
 use PHPStan\Type\ArrayType;
+use PHPStan\Type\BenevolentUnionType;
 use PHPStan\Type\BooleanType;
 use PHPStan\Type\Constant\ConstantIntegerType;
 use PHPStan\Type\FloatType;
+use PHPStan\Type\Generic\GenericObjectType;
 use PHPStan\Type\IntegerType;
 use PHPStan\Type\MixedType;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\StringType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
+use PHPStan\Type\TypeWithClassName;
 
 class ModelCastHelper
 {
@@ -30,20 +32,21 @@ class ModelCastHelper
 
     public function getReadableType(string $cast, Type $originalType): Type
     {
-        $cast = Str::before($cast, ':');
+        $castType = $this->parseCast($cast);
 
-        $attributeType = match ($cast) {
-            'int', 'integer' => new IntegerType(),
+        $attributeType = match ($castType) {
+            'int', 'integer', 'timestamp' => new IntegerType(),
             'real', 'float', 'double' => new FloatType(),
-            'decimal' => new AccessoryNumericStringType(),
+            'decimal' => TypeCombinator::intersect(new StringType(), new AccessoryNumericStringType()),
             'string' => new StringType(),
             'bool', 'boolean' => new BooleanType(),
             'object' => new ObjectType('stdClass'),
-            'array', 'json' => new ArrayType(new MixedType(), new MixedType()),
+            'array', 'json' => new ArrayType(new BenevolentUnionType([new IntegerType(), new StringType()]), new MixedType()),
             'collection' => new ObjectType('Illuminate\Support\Collection'),
             'date', 'datetime' => $this->getDateType(),
             'immutable_date', 'immutable_datetime' => new ObjectType('Carbon\CarbonImmutable'),
-            'timestamp' => new IntegerType(),
+            'Illuminate\Database\Eloquent\Casts\AsArrayObject' => new ObjectType('Illuminate\Database\Eloquent\Casts\ArrayObject'),
+            'Illuminate\Database\Eloquent\Casts\AsCollection' => new GenericObjectType('Illuminate\Support\Collection', [new BenevolentUnionType([new IntegerType(), new StringType()]), new MixedType()]),
             default => null,
         };
 
@@ -52,7 +55,7 @@ class ModelCastHelper
         }
 
         if (! $this->reflectionProvider->hasClass($cast)) {
-            return new MixedType();
+            return $originalType;
         }
 
         $classReflection = $this->reflectionProvider->getClass($cast);
@@ -81,18 +84,20 @@ class ModelCastHelper
 
     public function getWriteableType(string $cast, Type $originalType): Type
     {
-        $attributeType = match ($cast) {
-            'int', 'integer' => new IntegerType(),
+        $castType = $this->parseCast($cast);
+
+        $attributeType = match ($castType) {
+            'int', 'integer', 'timestamp' => new IntegerType(),
             'real', 'float', 'double' => new FloatType(),
-            'decimal' => new AccessoryNumericStringType(),
+            'decimal' => TypeCombinator::intersect(new StringType(), new AccessoryNumericStringType()),
             'string' => new StringType(),
             'bool', 'boolean' => TypeCombinator::union(new BooleanType(), new ConstantIntegerType(0), new ConstantIntegerType(1)),
             'object' => new ObjectType('stdClass'),
-            'array', 'json' => new ArrayType(new MixedType(), new MixedType()),
+            'array', 'json' => new ArrayType(new BenevolentUnionType([new IntegerType(), new StringType()]), new MixedType()),
             'collection' => new ObjectType('Illuminate\Support\Collection'),
             'date', 'datetime' => $this->getDateType(),
             'immutable_date', 'immutable_datetime' => new ObjectType('Carbon\CarbonImmutable'),
-            'timestamp' => new IntegerType(),
+            'Illuminate\Database\Eloquent\Casts\AsArrayObject', 'Illuminate\Database\Eloquent\Casts\AsCollection' => new MixedType(),
             default => null,
         };
 
@@ -101,7 +106,7 @@ class ModelCastHelper
         }
 
         if (! $this->reflectionProvider->hasClass($cast)) {
-            return new MixedType();
+            return $originalType;
         }
 
         $classReflection = $this->reflectionProvider->getClass($cast);
@@ -110,7 +115,7 @@ class ModelCastHelper
             $methodReflection = $classReflection->getNativeMethod('castUsing');
             $castUsingReturn = ParametersAcceptorSelector::selectSingle($methodReflection->getVariants())->getReturnType();
 
-            if ($castUsingReturn instanceof ObjectType && $castReflection = $castUsingReturn->getClassReflection()) {
+            if ($castUsingReturn instanceof TypeWithClassName && $castReflection = $castUsingReturn->getClassReflection()) {
                 $classReflection = $castReflection;
             }
         }
@@ -141,5 +146,23 @@ class ModelCastHelper
         }
 
         return new ObjectType($dateClass);
+    }
+
+    /**
+     * @param  string  $cast
+     * @return string|null
+     */
+    private function parseCast(string $cast): ?string
+    {
+        foreach (explode(':', $cast) as $part) {
+            // If the cast is prefixed with `encrypted:` we need to skip to the next
+            if ($part === 'encrypted') {
+                continue;
+            }
+
+            return $part;
+        }
+
+        return null;
     }
 }

@@ -4,7 +4,6 @@ namespace App;
 
 use App\Casts\Favorites;
 use App\Casts\Hash;
-use function get_class;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\AsArrayObject;
 use Illuminate\Database\Eloquent\Casts\AsCollection;
@@ -20,6 +19,8 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use Tests\Application\HasManySyncable;
+
+use function get_class;
 
 /**
  * @property string $propertyDefinedOnlyInAnnotation
@@ -54,6 +55,25 @@ class User extends Authenticatable
         'properties' => AsCollection::class,
         'favorites' => Favorites::class,
         'secret' => Hash::class.':sha256',
+
+        'int' => 'int',
+        'integer' => 'integer',
+        'real' => 'real',
+        'float' => 'float',
+        'double' => 'double',
+        'decimal' => 'decimal',
+        'string' => 'string',
+        'bool' => 'bool',
+        'boolean' => 'boolean',
+        'object' => 'object',
+        'array' => 'array',
+        'json' => 'json',
+        'collection' => 'collection',
+        'date' => 'date',
+        'datetime' => 'datetime',
+        'immutable_date' => 'immutable_date',
+        'immutable_datetime' => 'immutable_datetime',
+        'timestamp' => 'timestamp',
     ];
 
     /**
@@ -147,7 +167,10 @@ class User extends Authenticatable
         $localKey = $localKey ?: $this->getKeyName();
 
         return new HasManySyncable(
-            $instance->newQuery(), $this, $instance->getTable().'.'.$foreignKey, $localKey
+            $instance->newQuery(),
+            $this,
+            $instance->getTable().'.'.$foreignKey,
+            $localKey
         );
     }
 
